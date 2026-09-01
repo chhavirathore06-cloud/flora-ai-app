@@ -88,7 +88,7 @@ def process_ai_request(image_bytes, prompt):
             except Exception as e:
                 last_err = str(e)
                 if "429" in last_err or "503" in last_err or "RESOURCE_EXHAUSTED" in last_err:
-                    time.sleep(3)  # Short pause before retry/switching key
+                    time.sleep(3)
                     continue
                 else:
                     raise e
