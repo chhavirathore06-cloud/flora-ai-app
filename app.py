@@ -81,7 +81,7 @@ def process_ai_request(image_bytes, prompt):
         for attempt in range(2):
             try:
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents=[prompt, image]
                 )
                 return response.text
