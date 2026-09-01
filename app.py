@@ -2,6 +2,7 @@ import streamlit as st
 from google import genai
 from PIL import Image
 import time
+import io
 
 st.set_page_config(
     page_title="Flora AI - Universal Botanical Intelligence",
@@ -10,25 +11,25 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Read API key securely from Streamlit Secrets or code fallback
-try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-except Exception:
-    GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+# Fetch all available API Keys from Secrets
+api_keys = []
+if "GEMINI_API_KEY_1" in st.secrets:
+    api_keys.append(st.secrets["GEMINI_API_KEY_1"])
+if "GEMINI_API_KEY_2" in st.secrets:
+    api_keys.append(st.secrets["GEMINI_API_KEY_2"])
+if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"] not in api_keys:
+    api_keys.append(st.secrets["GEMINI_API_KEY"])
+
+if not api_keys:
+    api_keys = ["YOUR_FALLBACK_API_KEY"]
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
     
-    * {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-    }
-
-    .stApp {
-        background-color: #0b0f19;
-        color: #f1f5f9;
-    }
-
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .stApp { background-color: #0b0f19; color: #f1f5f9; }
+    
     .brand-header {
         background: linear-gradient(180deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.6) 100%);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -38,37 +39,25 @@ st.markdown("""
     }
 
     .brand-title {
-        font-size: 1.8rem;
-        font-weight: 700;
+        font-size: 1.8rem; font-weight: 700;
         background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         margin: 0;
     }
 
     .result-card {
-        background: #151c2c;
-        border: 1px solid #1e293b;
-        border-radius: 16px;
-        padding: 16px;
-        margin-bottom: 20px;
+        background: #151c2c; border: 1px solid #1e293b;
+        border-radius: 16px; padding: 16px; margin-bottom: 20px;
     }
 
     .status-badge {
-        background: rgba(34, 197, 94, 0.15);
-        color: #4ade80;
+        background: rgba(34, 197, 94, 0.15); color: #4ade80;
         border: 1px solid rgba(34, 197, 94, 0.3);
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        display: inline-block;
+        padding: 4px 12px; border-radius: 20px; font-size: 0.85rem;
+        font-weight: 600; display: inline-block;
     }
 
-    .stImage > img {
-        border-radius: 14px;
-        border: 1px solid #1e293b;
-    }
+    .stImage > img { border-radius: 14px; border: 1px solid #1e293b; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -81,23 +70,30 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# Helper function to handle rate-limits and busy server retries
-def generate_response_with_retry(client, prompt, image, retries=3):
-    for attempt in range(retries):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=[prompt, image]
-            )
-            return response
-        except Exception as e:
-            err_str = str(e)
-            if ("429" in err_str or "503" in err_str) and attempt < retries - 1:
-                time.sleep(10)  # Wait 10 seconds to bypass Rate-Limit (5 RPM)
-                continue
-            raise e
+# Smart Cached API Processor to avoid redundant API hits & rate limit bugs
+@st.cache_data(show_spinner=False)
+def process_ai_request(image_bytes, prompt):
+    image = Image.open(io.BytesIO(image_bytes))
+    last_err = None
+    
+    for key in api_keys:
+        client = genai.Client(api_key=key)
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[prompt, image]
+                )
+                return response.text
+            except Exception as e:
+                last_err = str(e)
+                if "429" in last_err or "503" in last_err or "RESOURCE_EXHAUSTED" in last_err:
+                    time.sleep(3)  # Short pause before retry/switching key
+                    continue
+                else:
+                    raise e
+    raise Exception(last_err)
 
-# Tabs for separate features
 tab1, tab2 = st.tabs(["🌸 Plant, Tree & Crop Identification", "🩺 Disease & Pest Doctor"])
 
 # --- TAB 1: IDENTIFICATION & CARE ---
@@ -118,8 +114,6 @@ with tab1:
         if uploaded_file is not None:
             with st.spinner("Analyzing plant details with Universal AI..."):
                 try:
-                    client = genai.Client(api_key=GEMINI_API_KEY)
-                    
                     prompt = """
                     Analyze this plant, flower, tree, or crop image and output the details in exact Markdown format:
                     
@@ -138,7 +132,8 @@ with tab1:
                     - 🟤 **Soil & Fertilizer:** [Soil Preference & Recommended Fertilizer]
                     """
                     
-                    response = generate_response_with_retry(client, prompt, image)
+                    file_bytes = uploaded_file.getvalue()
+                    result_text = process_ai_request(file_bytes, prompt)
                     
                     st.markdown("""
                         <div class="result-card">
@@ -146,13 +141,11 @@ with tab1:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    st.markdown(response.text)
+                    st.markdown(result_text)
 
                 except Exception as e:
-                    if "429" in str(e):
-                        st.warning("⏱️ Free Tier Per-Minute Limit Hit! Please wait 15-20 seconds and try again.")
-                    elif "503" in str(e):
-                        st.warning("🌐 Google AI server is currently busy. Retrying in a moment...")
+                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                        st.warning("⏱️ Rate limit hit. Please wait 15-20 seconds before analyzing a new photo!")
                     else:
                         st.error(f"Error analyzing image: {str(e)}")
         else:
@@ -177,8 +170,6 @@ with tab2:
         if uploaded_disease_file is not None:
             with st.spinner("Diagnosing disease & pest issues..."):
                 try:
-                    client = genai.Client(api_key=GEMINI_API_KEY)
-                    
                     prompt_disease = """
                     Analyze this image of a plant, tree, or crop for health issues, diseases, pest/insect attacks, or nutrient deficiencies.
                     Output the details in exact Markdown format:
@@ -198,7 +189,8 @@ with tab2:
                     - 🔮 **Future Prevention:** [Tips to avoid this problem in future]
                     """
                     
-                    response_disease = generate_response_with_retry(client, prompt_disease, disease_image)
+                    disease_bytes = uploaded_disease_file.getvalue()
+                    disease_result_text = process_ai_request(disease_bytes, prompt_disease)
                     
                     st.markdown("""
                         <div class="result-card">
@@ -206,13 +198,11 @@ with tab2:
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    st.markdown(response_disease.text)
+                    st.markdown(disease_result_text)
 
                 except Exception as e:
-                    if "429" in str(e):
-                        st.warning("⏱️ Free Tier Per-Minute Limit Hit! Please wait 15-20 seconds and try again.")
-                    elif "503" in str(e):
-                        st.warning("🌐 Google AI server is currently busy. Retrying in a moment...")
+                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                        st.warning("⏱️ Rate limit hit. Please wait 15-20 seconds before analyzing a new photo!")
                     else:
                         st.error(f"Error diagnosing image: {str(e)}")
         else:
