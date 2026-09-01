@@ -81,7 +81,7 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# Helper function to call Gemini API with retry mechanism
+# Helper function to handle rate-limits and busy server retries
 def generate_response_with_retry(client, prompt, image, retries=3):
     for attempt in range(retries):
         try:
@@ -91,8 +91,9 @@ def generate_response_with_retry(client, prompt, image, retries=3):
             )
             return response
         except Exception as e:
-            if "503" in str(e) and attempt < retries - 1:
-                time.sleep(2)  # Wait 2 seconds before retrying
+            err_str = str(e)
+            if ("429" in err_str or "503" in err_str) and attempt < retries - 1:
+                time.sleep(10)  # Wait 10 seconds to bypass Rate-Limit (5 RPM)
                 continue
             raise e
 
@@ -148,8 +149,10 @@ with tab1:
                     st.markdown(response.text)
 
                 except Exception as e:
-                    if "503" in str(e):
-                        st.warning("Google AI server temporary busy hai. Kripya 5-10 second baad dobara upload/try karein.")
+                    if "429" in str(e):
+                        st.warning("⏱️ Free Tier Per-Minute Limit Hit! Please wait 15-20 seconds and try again.")
+                    elif "503" in str(e):
+                        st.warning("🌐 Google AI server is currently busy. Retrying in a moment...")
                     else:
                         st.error(f"Error analyzing image: {str(e)}")
         else:
@@ -206,8 +209,10 @@ with tab2:
                     st.markdown(response_disease.text)
 
                 except Exception as e:
-                    if "503" in str(e):
-                        st.warning("Google AI server temporary busy hai. Kripya 5-10 second baad dobara try karein.")
+                    if "429" in str(e):
+                        st.warning("⏱️ Free Tier Per-Minute Limit Hit! Please wait 15-20 seconds and try again.")
+                    elif "503" in str(e):
+                        st.warning("🌐 Google AI server is currently busy. Retrying in a moment...")
                     else:
                         st.error(f"Error diagnosing image: {str(e)}")
         else:
