@@ -1,6 +1,7 @@
 import streamlit as st
 from google import genai
 from PIL import Image
+import time
 
 st.set_page_config(
     page_title="Flora AI - Universal Botanical Intelligence",
@@ -80,6 +81,21 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
+# Helper function to call Gemini API with retry mechanism
+def generate_response_with_retry(client, prompt, image, retries=3):
+    for attempt in range(retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=[prompt, image]
+            )
+            return response
+        except Exception as e:
+            if "503" in str(e) and attempt < retries - 1:
+                time.sleep(2)  # Wait 2 seconds before retrying
+                continue
+            raise e
+
 # Tabs for separate features
 tab1, tab2 = st.tabs(["🌸 Plant, Tree & Crop Identification", "🩺 Disease & Pest Doctor"])
 
@@ -121,10 +137,7 @@ with tab1:
                     - 🟤 **Soil & Fertilizer:** [Soil Preference & Recommended Fertilizer]
                     """
                     
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=[prompt, image]
-                    )
+                    response = generate_response_with_retry(client, prompt, image)
                     
                     st.markdown("""
                         <div class="result-card">
@@ -135,7 +148,10 @@ with tab1:
                     st.markdown(response.text)
 
                 except Exception as e:
-                    st.error(f"Error analyzing image: {str(e)}")
+                    if "503" in str(e):
+                        st.warning("Google AI server temporary busy hai. Kripya 5-10 second baad dobara upload/try karein.")
+                    else:
+                        st.error(f"Error analyzing image: {str(e)}")
         else:
             st.info("Upload any plant, tree, or crop photo on the left panel to get full identification and care details.")
 
@@ -179,10 +195,7 @@ with tab2:
                     - 🔮 **Future Prevention:** [Tips to avoid this problem in future]
                     """
                     
-                    response_disease = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=[prompt_disease, disease_image]
-                    )
+                    response_disease = generate_response_with_retry(client, prompt_disease, disease_image)
                     
                     st.markdown("""
                         <div class="result-card">
@@ -193,6 +206,9 @@ with tab2:
                     st.markdown(response_disease.text)
 
                 except Exception as e:
-                    st.error(f"Error diagnosing image: {str(e)}")
+                    if "503" in str(e):
+                        st.warning("Google AI server temporary busy hai. Kripya 5-10 second baad dobara try karein.")
+                    else:
+                        st.error(f"Error diagnosing image: {str(e)}")
         else:
             st.info("Upload an image of a damaged leaf or crop on the left panel to get diagnosis and treatment remedies.")
