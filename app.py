@@ -122,7 +122,7 @@ with tab1:
                     """
                     
                     response = client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model='gemini-3.6-flash',
                         contents=[prompt, image]
                     )
                     
@@ -180,7 +180,7 @@ with tab2:
                     """
                     
                     response_disease = client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model='gemini-3.6-flash',
                         contents=[prompt_disease, disease_image]
                     )
                     
